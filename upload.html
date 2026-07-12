@@ -1,0 +1,97 @@
+# Adding the upload widget to a page
+
+This uses your existing design system — the `.btn` / `.btn-dark` button
+classes and the `showToast()` helper already defined in your shared `<script>`
+block on every page — so it looks and feels native to the site, not bolted on.
+
+## 1. Where to put it
+
+Drop the block below anywhere inside `<body>` on whichever page should have
+the upload control (e.g. inside a `<section class="section on-white">` on
+`index.html`, or on its own simple page).
+
+## 2. The exact code
+
+```html
+<div class="upload-widget" style="max-width:420px;margin:0 auto;text-align:center;">
+  <input type="file" id="fileInput" accept="image/*" style="display:none;">
+  <button class="btn btn-dark" id="uploadBtn" type="button">Upload Image</button>
+  <div id="uploadPreview" style="margin-top:20px;"></div>
+</div>
+
+<script>
+(function(){
+  const fileInput = document.getElementById('fileInput');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const preview = document.getElementById('uploadPreview');
+
+  uploadBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Uploading…';
+
+    try {
+      const res = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
+        method: 'POST',
+        body: file,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Upload failed');
+      }
+
+      const blob = await res.json();
+      showToast('Upload complete!');
+      preview.innerHTML =
+        `<img src="${blob.url}" alt="${file.name}" style="max-width:220px;border-radius:var(--radius);box-shadow:var(--shadow-soft);">
+         <div style="margin-top:8px;font-size:12px;word-break:break-all;color:var(--ink-soft);">${blob.url}</div>`;
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Something went wrong — please try again.');
+    } finally {
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'Upload Image';
+      fileInput.value = '';
+    }
+  });
+})();
+</script>
+```
+
+That's it — no changes needed to your existing `shared.js`/`shared.css`
+content, since this reuses `showToast()`, `.btn`, `.btn-dark`, `--radius`,
+`--shadow-soft`, and `--ink-soft` that are already defined on every page.
+
+## 3. Deploy checklist
+
+1. Add `api/upload.js` (provided) to your project root, in an `api/` folder.
+2. Add/merge the `package.json` (provided) so Vercel installs `@vercel/blob`
+   during the build. If you already have a `package.json`, just add
+   `"@vercel/blob": "latest"` under `"dependencies"`.
+3. Paste the HTML/JS block above into your page.
+4. Commit and push — Vercel will pick up the new `api/upload.js`
+   automatically and deploy it as a Serverless Function at `/api/upload`.
+   No manual env var setup needed: since you've already connected Blob
+   storage to this project in the dashboard, Vercel injects
+   `BLOB_READ_WRITE_TOKEN` for you automatically.
+
+## Good to know
+
+- **4.5MB limit**: this "server upload" pattern (browser → your function →
+  Blob) is capped at 4.5MB per file, a Vercel platform limit on Serverless
+  Function request bodies. Fine for photos, but if you'll ever need bigger
+  files, Vercel Blob also supports direct browser-to-Blob "client uploads"
+  (up to 5TB) — a different, slightly more involved pattern. Say the word if
+  you want that version instead.
+- **Public vs private**: `api/upload.js` uses `access: 'public'`, so
+  anyone with the URL can view the file — appropriate for things like
+  product photos. Switch to `access: 'private'` if you need access control.
+- **No auth on the endpoint**: as written, anyone who can reach
+  `/api/upload` can upload a file to your store. That's fine for an
+  internal/admin tool, but if this button will be public-facing, add an
+  auth check at the top of the handler before calling `put()`.
